@@ -759,6 +759,7 @@ private:
 private:
   MDL_ticket(const MDL_ticket &);               /* not implemented */
   MDL_ticket &operator=(const MDL_ticket &);    /* not implemented */
+  friend void sufei_print_ticket(const MDL_ticket *ticket); //add by sufei
 };
 
 

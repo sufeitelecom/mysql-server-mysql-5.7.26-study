@@ -18,6 +18,7 @@
 #include "debug_sync.h"
 #include "prealloced_array.h"
 #include <lf.h>
+#include "mysqld.h"  // sufei_mdl_print add by sufei
 #include <mysqld_error.h>
 #include <mysql/plugin.h>
 #include <mysql/service_thd_wait.h>
@@ -28,6 +29,10 @@
 #include <my_murmur3.h>
 #include <algorithm>
 #include <functional>
+#include "log.h" // sql_print_information add by sufei 
+#include "sql_class.h" // THD add by sufei 
+
+void sufei_print_ticket(const MDL_ticket *ticket); //add by sufei
 
 static PSI_memory_key key_memory_MDL_context_acquire_locks;
 
@@ -3575,6 +3580,14 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
       my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
       return true;
     }
+
+    //add by sufei
+    if (sufei_mdl_print)
+    {
+      sql_print_information("[Call Acquire_lock] THIS MDL LOCK acquire [OK]:");
+      sufei_print_ticket(mdl_request->ticket);
+    }
+
     return false;
   }
 
@@ -3597,6 +3610,12 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
       MDL_lock, MDL_context and MDL_request were updated
       accordingly, so we can simply return success.
     */
+   //add by sufei
+    if (sufei_mdl_print)
+    {
+      sql_print_information("[Call Acquire_lock] THIS MDL LOCK acquire [OK]:");
+      sufei_print_ticket(mdl_request->ticket);
+    }
     return FALSE;
   }
 
@@ -3641,6 +3660,12 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
   DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
 
   find_deadlock();
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call Acquire_lock] THIS MDL LOCK acquire [WAIT](MDL_LOCK wait queue):");
+    sufei_print_ticket(mdl_request->ticket);
+  }  
 
   if (lock->needs_notification(ticket) || lock->needs_connection_check())
   {
@@ -3751,7 +3776,12 @@ MDL_context::acquire_lock(MDL_request *mdl_request, ulong lock_wait_timeout)
   mdl_request->ticket= ticket;
 
   mysql_mdl_set_status(ticket->m_psi, MDL_ticket::GRANTED);
-
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call Acquire_lock] THIS MDL LOCK granted [OK](MDL_LOCK GRANTED queue):");
+    sufei_print_ticket(mdl_request->ticket);
+  } 
   return FALSE;
 }
 
@@ -3915,7 +3945,12 @@ MDL_context::upgrade_shared_lock(MDL_ticket *mdl_ticket,
   MDL_REQUEST_INIT_BY_KEY(&mdl_new_lock_request,
                           &mdl_ticket->m_lock->key, new_type,
                           MDL_TRANSACTION);
-
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call Upgrade_shared_lock] THIS MDL LOCK will [UPGRADE]:");
+    sufei_print_ticket(mdl_ticket);
+  } 
   if (acquire_lock(&mdl_new_lock_request, lock_wait_timeout))
     DBUG_RETURN(TRUE);
 
@@ -4005,6 +4040,12 @@ MDL_context::upgrade_shared_lock(MDL_ticket *mdl_ticket,
     MDL_ticket::destroy(mdl_new_lock_request.ticket);
   }
 
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Last Upgrade_shared_lock] THIS MDL LOCK upgrade [TO]:");
+    sufei_print_ticket(mdl_ticket);
+  } 
   DBUG_RETURN(FALSE);
 }
 
@@ -4285,7 +4326,12 @@ void MDL_context::release_lock(enum_mdl_duration duration, MDL_ticket *ticket)
   DBUG_ASSERT(this == ticket->get_ctx());
   mysql_mutex_assert_not_owner(&LOCK_open);
 
-
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call release_lock] THIS MDL LOCK will [RELEASE]:");
+    sufei_print_ticket(ticket);
+  } 
   /*
     If lock we are about to release requires post-release notification
     of SEs, we need to save its MDL_key on stack. This is necessary to
@@ -4514,7 +4560,13 @@ void MDL_ticket::downgrade_lock(enum_mdl_type new_type)
   */
   if (m_type == new_type || !has_stronger_or_equal_type(new_type))
     return;
-
+  
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call downgrade_lock] THIS MDL LOCK will [DOWNGRADE]:");
+    sufei_print_ticket(this);
+  }   
   /* Only allow downgrade from EXCLUSIVE and SHARED_NO_WRITE. */
   DBUG_ASSERT(m_type == MDL_EXCLUSIVE ||
               m_type == MDL_SHARED_NO_WRITE);
@@ -4570,6 +4622,12 @@ void MDL_ticket::downgrade_lock(enum_mdl_type new_type)
     m_hton_notified= false;
     mysql_mdl_set_status(m_psi, MDL_ticket::GRANTED);
   }
+  //add by sufei
+  if (sufei_mdl_print)
+  {
+    sql_print_information("[Call downgrade_lock] THIS MDL LOCK downgrade [TO]:");
+    sufei_print_ticket(this);
+  } 
 }
 
 
@@ -4919,4 +4977,152 @@ void MDL_context::set_transaction_duration_for_all_locks()
   while ((ticket= trans_it++))
     ticket->m_duration= MDL_TRANSACTION;
 #endif
+}
+
+//add by sufei
+void sufei_print_ticket(const MDL_ticket *ticket)
+{
+  THD *print_thread = NULL;
+  print_thread = ticket->m_ctx->get_thd();
+
+  if(print_thread)
+  {
+    sql_print_information("    (>MDL PRINT) | Thread is %u | Current_state: %s | query is %s ",print_thread->thread_id(),print_thread->proc_info,print_thread->query().str); 
+  }
+  else
+  {
+    sql_print_information("    (>MDL PRINT) | unkown thread id ! |");
+  }
+
+  if(ticket->m_lock->key.db_name_length())
+  {
+    sql_print_information("    (->MDL PRINT) DB_name is %s ",ticket->m_lock->key.db_name());
+  }
+  if(ticket->m_lock->key.name_length())
+  {
+    sql_print_information("    (-->MDL PRINT) OBJ_name is %s ",ticket->m_lock->key.name());
+  }
+
+  switch(ticket->m_lock->key.mdl_namespace())
+  {
+    case MDL_key::GLOBAL:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","GLOBAL");
+      break;
+    case MDL_key::COMMIT:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s","COMMIT");
+      break;
+    case MDL_key::TABLESPACE:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","TABLESPACE");
+      break;
+    case MDL_key::SCHEMA:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","SCHEMA");
+      break;
+    case MDL_key::TABLE:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","TABLE");
+      break;
+    case MDL_key::FUNCTION:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","FUNCTION");
+      break;
+    case MDL_key::PROCEDURE:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","PROCEDURE");
+      break;
+    case MDL_key::TRIGGER:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","TRIGGER");
+      break;
+    case MDL_key::EVENT:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","EVENT");
+      break;
+    case MDL_key::USER_LEVEL_LOCK:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","USER_LEVEL_LOCK");
+      break;
+    case MDL_key::LOCKING_SERVICE:
+      sql_print_information("    (--->MDL PRINT) Namespace is %s ","LOCKING_SERVIC");
+      break;
+    default:
+      sql_print_information("    (--->MDL PRINT) unkown Namespace");
+  }
+  
+  if(ticket->m_is_fast_path)
+  {
+    sql_print_information("    (---->MDL PRINT) Fast path is:(Y)");
+  }
+
+  switch (ticket->m_type)
+  {
+    case MDL_INTENTION_EXCLUSIVE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_INTENTION_EXCLUSIVE(IX)");
+      break;
+    case MDL_SHARED:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED(S)");
+      break;
+    case MDL_SHARED_HIGH_PRIO:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_HIGH_PRIO(SH)");
+      break;
+    case  MDL_SHARED_READ:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_READ(SR)");
+      break;
+    case MDL_SHARED_WRITE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_WRITE(SW)");
+      break;
+    case MDL_SHARED_WRITE_LOW_PRIO:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_WRITE_LOW_PRIO(SWL)");
+      break;
+    case MDL_SHARED_UPGRADABLE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_UPGRADABLE(SU)");
+      break;
+    case MDL_SHARED_READ_ONLY:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_READ_ONLY(SRO)");
+      break;
+    case MDL_SHARED_NO_WRITE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_NO_WRITE(SNW)");
+      break;
+    case MDL_SHARED_NO_READ_WRITE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_SHARED_NO_READ_WRITE(SNRW)");
+      break;
+    case MDL_EXCLUSIVE:
+      sql_print_information("    (----->MDL PRINT) Mdl type is %s ","MDL_EXCLUSIVE(X)");
+      break;
+    default:
+      sql_print_information("    (----->MDL PRINT) Mdl unkown type");
+  }
+
+#ifndef DBUG_OFF
+  switch (ticket->m_duration)
+  {
+    case MDL_STATEMENT:
+      sql_print_information("    (------>MDL PRINT) Mdl  duration is %s ","MDL_STATEMENT");
+      break;
+    case  MDL_TRANSACTION:
+      sql_print_information("    (------>MDL PRINT) Mdl  duration is %s ","MDL_TRANSACTION");
+      break;
+    case MDL_EXPLICIT:
+     sql_print_information("    (------>MDL PRINT) Mdl  duration is %s ","MDL_EXPLICIT");
+      break;
+    default:
+      sql_print_information("    (------>MDL PRINT) Mdl  unkown duration");
+   }
+#endif
+
+  switch ( ticket->m_ctx->m_wait.get_status())
+  {
+    case  MDL_wait::EMPTY:
+      sql_print_information("    (------->MDL PRINT) Mdl  status is %s ","EMPTY");
+      break;
+    case  MDL_wait::GRANTED:
+      sql_print_information("    (------->MDL PRINT) Mdl  status is %s ","GRANTED");
+      break;
+    case  MDL_wait::VICTIM:
+     sql_print_information("    (-------->MDL PRINT) Mdl  status is %s ","VICTIM");
+      break;
+    case  MDL_wait::TIMEOUT:
+     sql_print_information("    (------->MDL PRINT) Mdl  status is %s ","TIMEOUT");
+      break;
+    case  MDL_wait::KILLED:
+     sql_print_information("    (------->MDL PRINT) Mdl  status is %s ","KILLED");
+      break;
+    default:
+      sql_print_information("    (------->MDL PRINT) Mdl  status  unkown");
+  }
+
+  return;
 }

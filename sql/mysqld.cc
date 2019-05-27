@@ -371,6 +371,7 @@ my_bool opt_log_slave_updates= 0;
 char *opt_slave_skip_errors;
 my_bool opt_slave_allow_batching= 0;
 
+my_bool sufei_mdl_print= 0; //add by sufei
 /**
   compatibility option:
     - index usage hints (USE INDEX without a FOR clause) behave as in 5.0
@@ -5712,6 +5713,11 @@ struct my_option my_long_early_options[]=
 
 struct my_option my_long_options[]=
 {
+  // add by sufei
+  {"sufei_mdl_print", 0,"print mdl lock detail info",
+   &sufei_mdl_print, &sufei_mdl_print, 0,
+   GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
 #ifdef HAVE_REPLICATION
   {"abort-slave-event-count", 0,
    "Option used by mysql-test for debugging and testing of replication.",

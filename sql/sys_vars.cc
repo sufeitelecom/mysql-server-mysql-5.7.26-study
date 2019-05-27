@@ -1044,6 +1044,13 @@ static bool binlog_direct_check(sys_var *self, THD *thd, set_var *var)
   return false;
 }
 
+//add by sufei
+static Sys_var_mybool Sys_sufei_mdl_print(
+       "sufei_mdl_print",
+       "mdl_detail",
+       GLOBAL_VAR(sufei_mdl_print), CMD_LINE(OPT_ARG), DEFAULT(FALSE),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG);
+
 static Sys_var_mybool Sys_binlog_direct(
        "binlog_direct_non_transactional_updates",
        "Causes updates to non-transactional engines using statement format to "
